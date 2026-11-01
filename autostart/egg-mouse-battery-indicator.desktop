@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Endgame Gear Mouse Battery Indicator
+Comment=System tray battery monitor and performance settings for Endgame Gear wireless mice
+Exec=egg-mouse-battery-indicator
+Icon=input-mouse
+Terminal=false
+Type=Application
+Categories=Utility;Settings;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+

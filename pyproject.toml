@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["egg_mouse_battery_indicator*"]
+
+[tool.setuptools.package-data]
+egg_mouse_battery_indicator = ["assets/*.svg"]
+
+[project]
+name = "egg-mouse-battery-indicator"
+version = "0.1.0"
+description = "System tray battery monitor and performance settings for Endgame Gear wireless mice (Linux)."
+readme = "README.md"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+egg-mouse-battery-indicator = "egg_mouse_battery_indicator.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
