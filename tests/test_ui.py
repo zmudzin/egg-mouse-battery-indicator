@@ -81,7 +81,8 @@ class TestMouseSettingsDialogUI(unittest.TestCase):
         self.assertEqual(dlg._cpi_spins_x[1].value(), 800)
         self.assertEqual(dlg._cpi_spins_y[1].value(), 1200)
         self.assertFalse(dlg._cpi_radios[0].isEnabled())  # v1 disables software stage select
-        self.assertFalse(dlg.combo_polling.isEnabled())   # wired disables polling change
+        self.assertTrue(dlg.combo_polling.isEnabled())    # user can update stored wireless polling rate even when wired
+        self.assertFalse(dlg.lbl_polling_wired_note.isHidden())
         self.assertTrue(dlg.chk_disable_led_liftoff.isChecked())
         self.assertTrue(dlg.chk_motion_jitter.isEnabled())
         self.assertFalse(dlg.chk_glass_mode.isEnabled())
@@ -89,9 +90,25 @@ class TestMouseSettingsDialogUI(unittest.TestCase):
         self.assertEqual(dlg.spin_power_saving.value(), 15)
         self.assertEqual(dlg.spin_deep_sleep.value(), 30)
 
+        # Verify tooltips are populated on key controls
+        for w in (
+            dlg.combo_polling,
+            dlg.chk_motion_sync,
+            dlg.chk_slamclick,
+            dlg.chk_motion_jitter,
+            dlg.chk_glass_mode,
+            dlg.chk_force_max_fps,
+            dlg.spin_angle_tuning,
+            dlg.combo_lod,
+            dlg.chk_angle_snap,
+            dlg.chk_ripple,
+            dlg._spdt_combos[0],
+        ):
+            self.assertTrue(bool(w.toolTip().strip()))
+
         collected = dlg._collect_changes()
         self.assertEqual(collected, dlg._initial_config)
-        self.assertNotIn("polling_rate", collected)  # wired should not write polling rate
+        self.assertEqual(collected["polling_rate"], PollingRate.PR2000Hz)
         self.assertEqual(collected["button_filters"], [SPDT_GX_SPEED, SPDT_GX_SAFE, 7, 8, 8])
         self.assertEqual(collected["button_entries"][3].describe(), "Ctrl+C")
         self.assertEqual(collected["button_entries"][4].describe(), "Fixed CPI: 600x400")

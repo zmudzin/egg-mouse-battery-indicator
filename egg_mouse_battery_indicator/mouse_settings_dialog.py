@@ -141,6 +141,13 @@ _SENTINEL_KEYBOARD = ("__keyboard__",)
 _SENTINEL_CUSTOM = ("__custom__",)
 
 
+def _set_tip(tip: str, *widgets: QWidget) -> None:
+    """Attach a tooltip to one or more widgets and keep it visible even when disabled."""
+    for w in widgets:
+        w.setToolTip(tip)
+        w.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, True)
+
+
 class _KeyCaptureLineEdit(QLineEdit):
     key_captured = Signal(int, int)  # (hid_key, qt_mod_mask)
 
@@ -374,15 +381,34 @@ class MouseSettingsDialog(QDialog):
         self.btn_reload = QPushButton(self.tr("Reload"))
         self.btn_reload.clicked.connect(self._start_loading)
 
+        lbl_conn_key = QLabel(self.tr("Connection:"))
+        lbl_mouse_fw_key = QLabel(self.tr("Mouse FW:"))
+        lbl_bat_key = QLabel(self.tr("Battery:"))
+        lbl_dongle_fw_key = QLabel(self.tr("Dongle FW:"))
+
+        _set_tip(
+            self.tr("Active connection mode: 2.4 GHz wireless dongle or USB-C cable (wired)."),
+            lbl_conn_key,
+            self.lbl_conn,
+        )
+        _set_tip(
+            self.tr("Battery level in wireless mode. Over USB-C cable, only Charging / 100% (Full) is shown because voltage readings fluctuate during charging."),
+            lbl_bat_key,
+            self.lbl_battery,
+        )
+        _set_tip(self.tr("Firmware version running on the mouse."), lbl_mouse_fw_key, self.lbl_mouse_fw)
+        _set_tip(self.tr("Firmware version running on the 2.4 GHz High-Speed wireless dongle."), lbl_dongle_fw_key, self.lbl_dongle_fw)
+        _set_tip(self.tr("Re-read current settings, battery state, and firmware versions from the mouse."), self.btn_reload)
+
         info_grid.addWidget(self.lbl_status, 0, 0, 1, 4)
         info_grid.addWidget(self.btn_reload, 0, 4)
-        info_grid.addWidget(QLabel(self.tr("Connection:")), 1, 0)
+        info_grid.addWidget(lbl_conn_key, 1, 0)
         info_grid.addWidget(self.lbl_conn, 1, 1)
-        info_grid.addWidget(QLabel(self.tr("Mouse FW:")), 1, 2)
+        info_grid.addWidget(lbl_mouse_fw_key, 1, 2)
         info_grid.addWidget(self.lbl_mouse_fw, 1, 3)
-        info_grid.addWidget(QLabel(self.tr("Battery:")), 2, 0)
+        info_grid.addWidget(lbl_bat_key, 2, 0)
         info_grid.addWidget(self.lbl_battery, 2, 1)
-        info_grid.addWidget(QLabel(self.tr("Dongle FW:")), 2, 2)
+        info_grid.addWidget(lbl_dongle_fw_key, 2, 2)
         info_grid.addWidget(self.lbl_dongle_fw, 2, 3)
         info_grid.setColumnStretch(1, 1)
         info_grid.setColumnStretch(3, 1)
@@ -416,16 +442,26 @@ class MouseSettingsDialog(QDialog):
         cpi_vlayout = QVBoxLayout(self.grp_cpi)
 
         top_row = QHBoxLayout()
-        top_row.addWidget(QLabel(self.tr("CPI Levels:")))
+        lbl_cpi_levels = QLabel(self.tr("CPI Levels:"))
+        top_row.addWidget(lbl_cpi_levels)
         self.combo_cpi_levels = QComboBox()
         for n in range(1, 5):
             self.combo_cpi_levels.addItem(str(n), n)
         self.combo_cpi_levels.currentIndexChanged.connect(self._on_cpi_levels_changed)
+        _set_tip(
+            self.tr("Number of active CPI stages (1–4) cycled by the CPI button or 'CPI Loop'. Stages above this count stay saved but are skipped."),
+            lbl_cpi_levels,
+            self.combo_cpi_levels,
+        )
         top_row.addWidget(self.combo_cpi_levels)
 
         top_row.addSpacing(16)
         self.chk_split_xy = QCheckBox(self.tr("Independent X / Y CPI"))
         self.chk_split_xy.toggled.connect(self._on_split_xy_toggled)
+        _set_tip(
+            self.tr("Set separate horizontal (X) and vertical (Y) sensitivity per CPI stage. When unchecked, Y matches X."),
+            self.chk_split_xy,
+        )
         top_row.addWidget(self.chk_split_xy)
         top_row.addStretch()
         cpi_vlayout.addLayout(top_row)
@@ -434,21 +470,32 @@ class MouseSettingsDialog(QDialog):
         self._cpi_stage_group = QButtonGroup(self)
         self._cpi_stage_group.setExclusive(True)
 
+        cpi_spin_tip = self.tr(
+            "Sensor sensitivity in Counts Per Inch (CPI). Higher values move the cursor further per inch of hand movement (v1: 50–26,000 step 50; v2: 10–30,000 step 10 up to 10k)."
+        )
+
         for i in range(4):
             swatch = QLabel()
             swatch.setFixedSize(14, 14)
             swatch.setStyleSheet(
                 f"background-color: {CPI_STAGE_COLORS[i]}; border: 1px solid #666; border-radius: 2px;"
             )
-            swatch.setToolTip(
-                self.tr("Underside LED glows {color} for CPI {n}").format(
+            _set_tip(
+                self.tr("Underside LED glows {color} when CPI {n} is active.").format(
                     color=CPI_STAGE_COLOR_NAMES[i], n=i + 1
-                )
+                ),
+                swatch,
             )
 
             radio = QRadioButton(f"CPI {i + 1}")
             self._cpi_stage_group.addButton(radio, i + 1)
             self._cpi_radios.append(radio)
+            _set_tip(
+                self.tr("Active CPI stage (LED color: {color}). Selectable via software on v2 models; on v1 switch with the button under the mouse.").format(
+                    color=CPI_STAGE_COLOR_NAMES[i]
+                ),
+                radio,
+            )
 
             spin_x = QSpinBox()
             spin_x.setRange(10, 30000)
@@ -461,6 +508,8 @@ class MouseSettingsDialog(QDialog):
             spin_y.setSingleStep(50)
             spin_y.setValue(800)
             self._cpi_spins_y.append(spin_y)
+
+            _set_tip(cpi_spin_tip, spin_x, spin_y)
 
             def make_x_handler(idx: int) -> Any:
                 def on_val(val: int) -> None:
@@ -496,16 +545,34 @@ class MouseSettingsDialog(QDialog):
         self.grp_sensor = QGroupBox(self.tr("Sensor"))
         sensor_form = QFormLayout(self.grp_sensor)
 
+        lbl_lod = QLabel(self.tr("Lift-off distance (LOD):"))
         self.combo_lod = QComboBox()
-        sensor_form.addRow(self.tr("Lift-off distance (LOD):"), self.combo_lod)
+        _set_tip(
+            self.tr("Height above the mousepad where the sensor stops tracking when lifting the mouse. Lower LOD reduces cursor drift while resetting the mouse; raise it if tracking drops out on textured pads. (v1: 1.0/2.0 mm; v2: 0.7–1.7 mm, or 1.0/2.0 mm in Glass Mode)."),
+            lbl_lod,
+            self.combo_lod,
+        )
+        sensor_form.addRow(lbl_lod, self.combo_lod)
 
         self.chk_angle_snap = QCheckBox(self.tr("Angle Snapping (straight line correction)"))
+        _set_tip(
+            self.tr("Artificially straightens slight hand wobble during near-horizontal or near-vertical sweeps. Leave OFF for raw 1:1 tracking in FPS games."),
+            self.chk_angle_snap,
+        )
         sensor_form.addRow("", self.chk_angle_snap)
 
         self.chk_ripple = QCheckBox(self.tr("Ripple Control (high-CPI jitter smoothing)"))
+        _set_tip(
+            self.tr("Applies digital smoothing to reduce sensor jitter at very high CPI (e.g. > 6,000 CPI), adding a tiny amount of motion smoothing. Leave OFF at normal gaming CPI."),
+            self.chk_ripple,
+        )
         sensor_form.addRow("", self.chk_ripple)
 
         self.chk_disable_led_liftoff = QCheckBox(self.tr("Disable LED on Lift-Off"))
+        _set_tip(
+            self.tr("Prevents the underside CPI/status LED from turning on when lifting the mouse off the mousepad."),
+            self.chk_disable_led_liftoff,
+        )
         sensor_form.addRow("", self.chk_disable_led_liftoff)
 
         layout.addWidget(self.grp_sensor)
@@ -519,25 +586,60 @@ class MouseSettingsDialog(QDialog):
         self.grp_perf = QGroupBox(self.tr("Polling & Sensor Tuning"))
         perf_form = QFormLayout(self.grp_perf)
 
+        lbl_polling = QLabel(self.tr("Polling rate:"))
         self.combo_polling = QComboBox()
-        perf_form.addRow(self.tr("Polling rate:"), self.combo_polling)
+        _set_tip(
+            self.tr("How often the mouse reports movement & clicks over the 2.4 GHz dongle (4000 Hz = 0.25 ms, 2000 Hz = 0.5 ms, 1000 Hz = 1 ms). Higher rates feel smoother at higher CPU & battery cost.\nNote: Over USB-C cable, the mouse always operates at 1000 Hz (USB Full-Speed), but changing this still updates the stored wireless rate."),
+            lbl_polling,
+            self.combo_polling,
+        )
+        perf_form.addRow(lbl_polling, self.combo_polling)
+
+        self.lbl_polling_wired_note = QLabel(
+            self.tr("USB-C cable runs at 1000 Hz (Full-Speed); changing this updates the stored wireless rate.")
+        )
+        self.lbl_polling_wired_note.setWordWrap(True)
+        self.lbl_polling_wired_note.setStyleSheet("color: gray; font-size: 11px;")
+        self.lbl_polling_wired_note.setVisible(False)
+        perf_form.addRow("", self.lbl_polling_wired_note)
 
         self.chk_motion_sync = QCheckBox(self.tr("Motion Sync (sync sensor SPI reads with USB polling)"))
+        _set_tip(
+            self.tr("Aligns sensor captures with USB polling intervals for more consistent cursor pacing, at the cost of up to ~1 polling interval of motion latency (~0.25 ms at 4000 Hz, ~1 ms at 1000 Hz)."),
+            self.chk_motion_sync,
+        )
         perf_form.addRow("", self.chk_motion_sync)
 
         self.chk_slamclick = QCheckBox(self.tr("Slamclick Filter (ignore accidental clicks on pad slam)"))
+        _set_tip(
+            self.tr("Filters out shock vibrations so firmly setting or slamming the mouse onto the mousepad does not trigger phantom clicks."),
+            self.chk_slamclick,
+        )
         perf_form.addRow("", self.chk_slamclick)
 
         self.chk_motion_jitter = QCheckBox(self.tr("Motion Jitter Filter (v1 only)"))
+        _set_tip(
+            self.tr("v1 models only (XM2w 4k / OP1w 4k). Cleans up brief erratic cursor micro-jitter at high CPI when placing the mouse down or stopping abruptly."),
+            self.chk_motion_jitter,
+        )
         perf_form.addRow("", self.chk_motion_jitter)
 
         self.chk_glass_mode = QCheckBox(self.tr("Sensor Glass Mode (v2 only)"))
         self.chk_glass_mode.toggled.connect(self._on_glass_mode_toggled)
+        _set_tip(
+            self.tr("v2 models only (PAW3950). Improves optical tracking on glass or transparent mousepads. Enabling Glass Mode switches LOD options to 1.0 / 2.0 mm."),
+            self.chk_glass_mode,
+        )
         perf_form.addRow("", self.chk_glass_mode)
 
         self.chk_force_max_fps = QCheckBox(self.tr("Force max Sensor FPS (v2 only)"))
+        _set_tip(
+            self.tr("v2 models only. Keeps the sensor locked at maximum internal frame rate even during slow movements for lowest tracking latency, at higher battery drain."),
+            self.chk_force_max_fps,
+        )
         perf_form.addRow("", self.chk_force_max_fps)
 
+        lbl_angle_tuning = QLabel(self.tr("Sensor Angle Tuning (v2 only):"))
         angle_row = QHBoxLayout()
         self.slider_angle_tuning = QSlider(Qt.Orientation.Horizontal)
         self.slider_angle_tuning.setRange(-30, 30)
@@ -552,9 +654,15 @@ class MouseSettingsDialog(QDialog):
             if self.slider_angle_tuning.value() != v
             else None
         )
+        _set_tip(
+            self.tr("v2 models only. Rotates the sensor's X/Y axis (-30° to +30°) to compensate if you naturally grip or swipe the mouse at an angle."),
+            lbl_angle_tuning,
+            self.slider_angle_tuning,
+            self.spin_angle_tuning,
+        )
         angle_row.addWidget(self.slider_angle_tuning, 1)
         angle_row.addWidget(self.spin_angle_tuning)
-        perf_form.addRow(self.tr("Sensor Angle Tuning (v2 only):"), angle_row)
+        perf_form.addRow(lbl_angle_tuning, angle_row)
 
         layout.addWidget(self.grp_perf)
 
@@ -569,23 +677,36 @@ class MouseSettingsDialog(QDialog):
         click_note.setStyleSheet("color: gray; font-size: 11px;")
         click_grid.addWidget(click_note, 0, 0, 1, 4)
 
+        multiclick_tip = self.tr(
+            "Minimum click duration threshold (1–15, default 8) to prevent switch-bounce double-clicks. Unlike traditional debounce delays, lowering this does NOT reduce single-click latency."
+        )
+        spdt_tip = self.tr(
+            "Hardware actuation mode for Kailh GX SPDT main switches:\n"
+            "• OFF (Multiclick Filter): Standard bottom-contact actuation.\n"
+            "• GX Speed Mode: Registers click immediately as the switch leaf leaves the top contact (lowest click latency).\n"
+            "• GX Safe Mode: Requires both top-release and bottom-contact confirmation to prevent double-clicking."
+        )
+
         for i, name in enumerate(BUTTON_FILTER_NAMES):
             row_idx = i + 1
-            click_grid.addWidget(QLabel(f"{name}:"), row_idx, 0)
+            lbl_btn = QLabel(f"{name}:")
+            click_grid.addWidget(lbl_btn, row_idx, 0)
 
             spin = QSpinBox()
             spin.setRange(1, 15)
             spin.setValue(8)
-            spin.setToolTip(self.tr("Multiclick Filter count (1–15)"))
+            _set_tip(multiclick_tip, lbl_btn, spin)
             self._btn_filter_spins.append(spin)
             click_grid.addWidget(spin, row_idx, 1)
 
             if i < 2:
-                click_grid.addWidget(QLabel(self.tr("SPDT:")), row_idx, 2)
+                lbl_spdt = QLabel(self.tr("SPDT:"))
+                click_grid.addWidget(lbl_spdt, row_idx, 2)
                 spdt = QComboBox()
                 spdt.addItem(self.tr("OFF (Multiclick Filter)"), 0)
                 spdt.addItem(self.tr("GX Speed Mode"), SPDT_GX_SPEED)
                 spdt.addItem(self.tr("GX Safe Mode"), SPDT_GX_SAFE)
+                _set_tip(spdt_tip, lbl_spdt, spdt)
 
                 def make_spdt_handler(btn_idx: int, cmb: QComboBox, sp: QSpinBox) -> Any:
                     def on_changed() -> None:
@@ -599,6 +720,10 @@ class MouseSettingsDialog(QDialog):
         self.chk_multiclick_ack = QCheckBox(
             self.tr("I understand lower Multiclick Filter values don't reduce click latency (v2)")
         )
+        _set_tip(
+            self.tr("v2 firmware acknowledgement indicating you understand Multiclick Filter is a switch-bounce safeguard rather than a latency slider."),
+            self.chk_multiclick_ack,
+        )
         click_grid.addWidget(self.chk_multiclick_ack, len(BUTTON_FILTER_NAMES) + 1, 0, 1, 4)
 
         layout.addWidget(self.grp_clicks)
@@ -611,15 +736,27 @@ class MouseSettingsDialog(QDialog):
 
         self.chk_left_handed = QCheckBox(self.tr("Left-handed Mode (swap Left and Right clicks)"))
         self.chk_left_handed.toggled.connect(self._on_left_handed_toggled)
+        _set_tip(
+            self.tr("Swaps Left and Right mouse buttons so Right becomes the primary click and Left can be freely remapped."),
+            self.chk_left_handed,
+        )
         layout.addWidget(self.chk_left_handed)
 
         self.grp_buttons = QGroupBox(self.tr("Button Assignments"))
         form = QFormLayout(self.grp_buttons)
 
+        btn_map_tip = self.tr(
+            "Reassign this input to a mouse button, scroll wheel, keyboard key/shortcut, CPI Loop, Fixed CPI preset, media control, or Disable."
+        )
+        cpi_btn_tip = self.tr(
+            "Physical CPI/Mode button on the underside of the mouse (hidden in the official Windows tool; usually kept on CPI Loop)."
+        )
+
         for i, name in enumerate(BUTTON_TABLE_NAMES):
             lbl = QLabel(f"{name}:")
             combo = QComboBox()
             combo.activated.connect(lambda idx, b=i: self._on_button_combo_activated(b, idx))
+            _set_tip(cpi_btn_tip if i == 5 else btn_map_tip, lbl, combo)
             self._button_row_labels.append(lbl)
             self._button_combos.append(combo)
             form.addRow(lbl, combo)
@@ -642,27 +779,41 @@ class MouseSettingsDialog(QDialog):
         self.grp_power = QGroupBox(self.tr("Power Management"))
         power_form = QFormLayout(self.grp_power)
 
+        lbl_standby = QLabel(self.tr("Standby:"))
         ps_row = QHBoxLayout()
         self.chk_power_saving = QCheckBox(self.tr("Enable Power Saving after"))
         self.spin_power_saving = QSpinBox()
         self.spin_power_saving.setRange(1, 120)
         self.spin_power_saving.setSuffix(self.tr(" min"))
         self.chk_power_saving.toggled.connect(self.spin_power_saving.setEnabled)
+        _set_tip(
+            self.tr("After this inactivity period (1–120 min), the mouse enters low-power standby (lowers wireless report rate while staying connected; wakes instantly)."),
+            lbl_standby,
+            self.chk_power_saving,
+            self.spin_power_saving,
+        )
         ps_row.addWidget(self.chk_power_saving)
         ps_row.addWidget(self.spin_power_saving)
         ps_row.addStretch()
-        power_form.addRow(self.tr("Standby:"), ps_row)
+        power_form.addRow(lbl_standby, ps_row)
 
+        lbl_deep = QLabel(self.tr("Deep sleep:"))
         ds_row = QHBoxLayout()
         self.chk_deep_sleep = QCheckBox(self.tr("Enable Deep Sleep after"))
         self.spin_deep_sleep = QSpinBox()
         self.spin_deep_sleep.setRange(1, 120)
         self.spin_deep_sleep.setSuffix(self.tr(" min"))
         self.chk_deep_sleep.toggled.connect(self.spin_deep_sleep.setEnabled)
+        _set_tip(
+            self.tr("After this inactivity period (1–120 min), the mouse powers down the sensor and radio link to save battery. Move or click the mouse to wake it."),
+            lbl_deep,
+            self.chk_deep_sleep,
+            self.spin_deep_sleep,
+        )
         ds_row.addWidget(self.chk_deep_sleep)
         ds_row.addWidget(self.spin_deep_sleep)
         ds_row.addStretch()
-        power_form.addRow(self.tr("Deep sleep:"), ds_row)
+        power_form.addRow(lbl_deep, ds_row)
 
         layout.addWidget(self.grp_power)
 
@@ -672,6 +823,10 @@ class MouseSettingsDialog(QDialog):
         pair_row = QHBoxLayout()
         self.btn_pair = QPushButton(self.tr("Pair Dongle"))
         self.btn_pair.clicked.connect(self._on_pair_dongle)
+        _set_tip(
+            self.tr("Re-establishes the 2.4 GHz wireless handshake between the mouse and HS Dongle without erasing settings (available only via dongle)."),
+            self.btn_pair,
+        )
         pair_row.addWidget(self.btn_pair)
         pair_row.addWidget(
             QLabel(self.tr("Re-establish the 2.4 GHz radio link between mouse and dongle."))
@@ -682,6 +837,10 @@ class MouseSettingsDialog(QDialog):
         reset_row = QHBoxLayout()
         self.btn_factory_reset = QPushButton(self.tr("Factory Reset"))
         self.btn_factory_reset.clicked.connect(self._on_factory_reset)
+        _set_tip(
+            self.tr("Immediately erases custom CPI, sensor, click filter, timer, and button settings and restores factory defaults."),
+            self.btn_factory_reset,
+        )
         reset_row.addWidget(self.btn_factory_reset)
         reset_row.addWidget(
             QLabel(self.tr("Restore all onboard CPI, sensor, power, and button settings to defaults."))
@@ -826,12 +985,8 @@ class MouseSettingsDialog(QDialog):
                 self.combo_polling.addItem(fallback, int(status.polling_rate))
                 poll_idx = self.combo_polling.count() - 1
             self.combo_polling.setCurrentIndex(poll_idx)
-            self.combo_polling.setEnabled(identified and not status.is_wired)
-            self.combo_polling.setToolTip(
-                self.tr("Cabled USB-C operates at Full-Speed (1000 Hz max); stored wireless rate is preserved.")
-                if status.is_wired
-                else ""
-            )
+            self.combo_polling.setEnabled(identified)
+            self.lbl_polling_wired_note.setVisible(status.is_wired)
 
             self.chk_motion_sync.setChecked(status.motion_sync)
             self.chk_slamclick.setChecked(status.slamclick_filter)
@@ -1049,7 +1204,7 @@ class MouseSettingsDialog(QDialog):
             "button_entries": copy.deepcopy(self._working_buttons),
         }
 
-        if self._initial_status and not self._initial_status.is_wired:
+        if self.combo_polling.currentData() is not None:
             changes["polling_rate"] = PollingRate(int(self.combo_polling.currentData()))
 
         if model.has_cpi_stage_select:

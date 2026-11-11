@@ -1376,7 +1376,7 @@ def apply_mouse_settings(
             )
             for idx, p in enumerate(profiles[:4])
         ]
-    if polling_rate is not None and not cur.is_wired:
+    if polling_rate is not None:
         new_status.polling_rate = PollingRate(int(polling_rate))
 
     if glass_mode is not None and model.has_glass_mode:

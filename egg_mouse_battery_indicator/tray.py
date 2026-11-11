@@ -602,11 +602,15 @@ class MouseBatteryTray(QSystemTrayIcon):
                 self._last_icon_key = icon_key
 
             cpi_text = self._current_cpi_text(status)
-            poll_text = (
-                self.tr("1000 Hz (Wired)")
-                if status.is_wired
-                else POLLING_RATE_LABELS.get(status.polling_rate)
-            )
+            stored_poll = POLLING_RATE_LABELS.get(status.polling_rate)
+            if status.is_wired:
+                poll_text = (
+                    self.tr("1000 Hz (Wired; wireless: {0})").format(stored_poll)
+                    if stored_poll and status.polling_rate != PollingRate.PR1000Hz
+                    else self.tr("1000 Hz (Wired)")
+                )
+            else:
+                poll_text = stored_poll
 
             if status.is_wired and status.is_charging:
                 status_bits = [self.tr("charging")]
