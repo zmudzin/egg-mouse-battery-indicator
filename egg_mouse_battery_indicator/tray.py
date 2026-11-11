@@ -20,11 +20,14 @@ from .mouse_settings_dialog import MouseSettingsDialog
 from .paths import LOG_DIR, LOG_FILE
 from .preferences_dialog import PreferencesDialog
 from .protocol import (
+    CPI_STAGE_COLOR_NAMES,
     MouseStatus,
+    NOTIFY_REPORT_ID,
     PollingRate,
     POLLING_RATE_LABELS,
     fetch_mouse_status,
     find_control_hidraw,
+    parse_notify_packet,
     set_active_cpi_profile,
 )
 from .settings import AppSettings
@@ -71,6 +74,10 @@ class MouseBatteryTray(QSystemTrayIcon):
         self._nl_notifier: Optional[QSocketNotifier] = None
         self._hotplug_timer: Optional[QTimer] = None
 
+        # Real-time HID notification listener (Report ID 0x03)
+        self._evt_fd: Optional[int] = None
+        self._evt_notifier: Optional[QSocketNotifier] = None
+
         # Dedicated I/O Actor thread (Single-threaded hardware execution queue)
         self.hid_controller = HidController(self)
         self.hid_controller.start()
@@ -108,6 +115,7 @@ class MouseBatteryTray(QSystemTrayIcon):
 
         self._setup_sleep_monitor()
         self._setup_hotplug_monitor()
+        self._start_event_listener()
 
         self.setIcon(self.icon_renderer.render(0, False))
         self.update_status(priority=0)
@@ -144,7 +152,10 @@ class MouseBatteryTray(QSystemTrayIcon):
                 if not data:
                     break
                 # Filter strictly for Endgame Gear Vendor ID (3367) or product IDs
-                if b"3367" in data or b"1970" in data or b"1968" in data or b"1982" in data or b"1969" in data:
+                if any(
+                    tag in data
+                    for tag in (b"3367", b"1970", b"1968", b"1982", b"1972", b"1984", b"1969")
+                ):
                     relevant = True
             except BlockingIOError:
                 break
@@ -158,9 +169,91 @@ class MouseBatteryTray(QSystemTrayIcon):
 
     def _on_hotplug_debounced(self) -> None:
         logger.info("Hotplug event detected for Endgame Gear; refreshing device.")
+        self._stop_event_listener()
         self.hidraw_path = None
         self._consecutive_errors = 0
         self.update_status(priority=0)
+
+    def _start_event_listener(self) -> None:
+        """Listen for unsolicited 8-byte Report ID 0x03 events on the control hidraw node."""
+        if not self.hidraw_path or self._evt_fd is not None:
+            return
+        try:
+            fd = os.open(self.hidraw_path, os.O_RDONLY | os.O_NONBLOCK)
+            notifier = QSocketNotifier(fd, QSocketNotifier.Type.Read, self)
+            notifier.activated.connect(self._on_hid_event_readable)
+            self._evt_fd = fd
+            self._evt_notifier = notifier
+            logger.debug("HID notification listener active on %s.", self.hidraw_path)
+        except OSError as e:
+            logger.debug("Could not start HID notification listener on %s: %s", self.hidraw_path, e)
+
+    def _stop_event_listener(self) -> None:
+        if self._evt_notifier is not None:
+            self._evt_notifier.setEnabled(False)
+            try:
+                self._evt_notifier.activated.disconnect()
+            except Exception:
+                pass
+            self._evt_notifier.deleteLater()
+            self._evt_notifier = None
+        if self._evt_fd is not None:
+            try:
+                os.close(self._evt_fd)
+            except OSError:
+                pass
+            self._evt_fd = None
+
+    def _on_hid_event_readable(self) -> None:
+        if self._evt_fd is None:
+            return
+        while True:
+            try:
+                data = os.read(self._evt_fd, 64)
+            except BlockingIOError:
+                break
+            except OSError as e:
+                logger.debug("HID notification listener closed: %s", e)
+                self._stop_event_listener()
+                break
+            if not data:
+                break
+            if data[0] != NOTIFY_REPORT_ID:
+                continue
+            ev = parse_notify_packet(data)
+            if ev:
+                self._handle_hid_event(ev)
+
+    def _handle_hid_event(self, ev: dict) -> None:
+        ev_type = ev.get("type")
+        if ev_type == "battery":
+            pct = int(ev["level"])
+            if self.last_status is not None and 0 <= pct <= 100:
+                self.last_status.status = "ok"
+                self.last_status.level = pct
+                if self.last_status.is_wired:
+                    self.last_status.is_charging = pct < 100
+                self._apply_status(self.last_status)
+                self._set_reconnect_mode(False)
+        elif ev_type == "link":
+            if ev.get("awake"):
+                logger.debug("HID event: mouse woke up; refreshing status.")
+                self.update_status(priority=0)
+            else:
+                logger.debug("HID event: mouse entered deep sleep.")
+                if self.last_status is not None:
+                    self.last_status.status = "asleep"
+                    self._apply_status(self.last_status)
+                self._set_reconnect_mode(True)
+        elif ev_type == "polling":
+            rate = ev.get("rate")
+            if rate is not None and self.last_status is not None and self.last_status.settings_ok:
+                self.last_status.polling_rate = rate
+                self._apply_status(self.last_status)
+        elif ev_type == "cpi_stage":
+            if self.last_status is not None and self.last_status.settings_ok:
+                self.last_status.active_cpi_profile = int(ev["stage"])
+                self._apply_status(self.last_status)
 
     def _setup_sleep_monitor(self) -> None:
         bus = QDBusConnection.systemBus()
@@ -185,8 +278,10 @@ class MouseBatteryTray(QSystemTrayIcon):
         if sleeping:
             logger.info("System going to sleep; suspending polling.")
             self.timer.stop()
+            self._stop_event_listener()
             return
         logger.info("System resumed from sleep; scheduling HID refresh.")
+        self._stop_event_listener()
         self.hidraw_path = None
         self._consecutive_errors = 0
         QTimer.singleShot(RESUME_REFRESH_DELAY_MS, lambda: self.update_status(priority=0))
@@ -267,6 +362,7 @@ class MouseBatteryTray(QSystemTrayIcon):
 
     def _on_quit(self) -> None:
         self.timer.stop()
+        self._stop_event_listener()
         if self._hotplug_timer:
             self._hotplug_timer.stop()
         if self._nl_notifier:
@@ -404,9 +500,13 @@ class MouseBatteryTray(QSystemTrayIcon):
         if not self.hidraw_path:
             self.hidraw_path = find_control_hidraw()
             if not self.hidraw_path:
+                self._stop_event_listener()
                 self._apply_status(MouseStatus(status="unavailable", error="Device not found"))
                 self._set_reconnect_mode(True)
                 return
+            self._start_event_listener()
+        elif self._evt_fd is None:
+            self._start_event_listener()
 
         def on_done(res: Any, err: Optional[Exception]):
             if err is not None:
@@ -453,11 +553,24 @@ class MouseBatteryTray(QSystemTrayIcon):
                 self.dpi_menu.setEnabled(False)
                 return
             self.dpi_menu.setEnabled(True)
+            can_switch = status.model_identified and status.model.has_cpi_stage_select
+            self.dpi_menu.setTitle(
+                self.tr("CPI profile")
+                if can_switch
+                else self.tr("CPI profiles (switch via mouse)")
+            )
             for i, action in enumerate(self._dpi_actions):
                 if i < len(status.cpi_profiles):
                     p = status.cpi_profiles[i]
                     cpi_str = f"{p.x} CPI" if p.x == p.y else f"{p.x}x{p.y} CPI"
-                    action.setText(self.tr("Profile {n}: {cpi}").format(n=i + 1, cpi=cpi_str))
+                    color_name = CPI_STAGE_COLOR_NAMES[i]
+                    inactive_note = "" if i < status.cpi_levels else f" ({self.tr('inactive')})"
+                    action.setText(
+                        self.tr("Profile {n} ({color}): {cpi}{note}").format(
+                            n=i + 1, color=color_name, cpi=cpi_str, note=inactive_note
+                        )
+                    )
+                    action.setEnabled(can_switch)
                     action.blockSignals(True)
                     action.setChecked(status.active_cpi_profile == i + 1)
                     action.blockSignals(False)
@@ -467,36 +580,51 @@ class MouseBatteryTray(QSystemTrayIcon):
     def _apply_status(self, status: MouseStatus, force_icon: bool = False) -> None:
         if status.status == "ok":
             self._consecutive_errors = 0
-            self.last_known_level = status.level
+            if not status.is_wired or status.level >= 100:
+                self.last_known_level = status.level
         elif status.status == "error":
             self._consecutive_errors += 1
             if self._consecutive_errors >= ERRORS_BEFORE_RESCAN:
+                self._stop_event_listener()
                 self.hidraw_path = find_control_hidraw()
                 self._consecutive_errors = 0
 
         self.last_status = status
         self._update_dpi_menu(status)
 
+        dev_label = status.device_name or "Endgame Gear"
+
         if status.status == "ok":
-            icon_key = ("ok", status.level, status.is_charging)
+            icon_level = self.last_known_level if (status.is_wired and status.is_charging) else status.level
+            icon_key = ("ok", icon_level, status.is_charging)
             if force_icon or icon_key != self._last_icon_key:
-                self.setIcon(self.icon_renderer.render(status.level, status.is_charging))
+                self.setIcon(self.icon_renderer.render(icon_level, status.is_charging))
                 self._last_icon_key = icon_key
 
-            charging = self.tr("charging") if status.is_charging else self.tr("discharging")
             cpi_text = self._current_cpi_text(status)
-            poll_text = POLLING_RATE_LABELS.get(status.polling_rate)
+            poll_text = (
+                self.tr("1000 Hz (Wired)")
+                if status.is_wired
+                else POLLING_RATE_LABELS.get(status.polling_rate)
+            )
 
-            status_bits = [f"{status.level}%", charging]
+            if status.is_wired and status.is_charging:
+                status_bits = [self.tr("charging")]
+            elif status.is_wired:
+                status_bits = ["100%", self.tr("charged")]
+            else:
+                status_bits = [f"{status.level}%", self.tr("discharging")]
+
             if cpi_text:
                 status_bits.append(cpi_text)
             if poll_text:
                 status_bits.append(poll_text)
 
-            tooltip = f"Endgame Gear: {', '.join(status_bits)}"
-            self.status_action.setText(f"Endgame Gear — {' · '.join(status_bits)}")
+            tooltip = f"{dev_label}: {', '.join(status_bits)}"
+            self.status_action.setText(f"{dev_label} — {' · '.join(status_bits)}")
             self.setToolTip(tooltip)
-            self._handle_low_battery(status.level)
+            if not status.is_wired:
+                self._handle_low_battery(status.level)
             self.setVisible(True)
             return
 

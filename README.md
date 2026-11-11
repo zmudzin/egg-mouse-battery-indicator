@@ -8,16 +8,19 @@ Inspired by and built like [rog-mouse-battery-indicator](../rog-mouse-battery-in
 
 ## Features
 
-- Live battery percentage in the system tray (with charging & sleep states)
-- Tooltip / status line: battery %, active CPI, polling rate
+- Live battery percentage in the system tray (with charging & sleep states) plus real-time HID notification updates (`0x03`)
+- Tooltip / status line: device model, battery %, active CPI, polling rate
+- **Device & Firmware Info**: Mouse & Dongle firmware versions (`cmd 0x0E` / `0x0D`), automatic v1 vs v2 detection
 - **Update status now** from the tray menu; left-click the icon to refresh
 - **Refresh status interval** presets in the tray (default 10 min) and Preferences
-- **CPI**: 4 onboard profiles — quick switch from the tray menu; edit X/Y values in **Mouse settings…**
-- **Polling rate**: 125 Hz, 1000 Hz, 2000 Hz, 4000 Hz, 1000 Hz (Eco)
-- **Lift-off distance (LOD)**: 1.0 mm / 2.0 mm
-- **Sensor features**: Motion Sync, Ripple Control, Angle Snapping
-- **Power management**: Standby and Deep sleep timers
-- Settings are stored **on the mouse hardware**
+- **CPI**: 1–4 onboard CPI levels, independent X/Y values, stage LED color indicators, and quick switch from the tray/dialog (on v2)
+- **Polling rate**: 1000 Hz, 2000 Hz, 4000 Hz (plus 1000 Hz Power Saving & 125 Hz Office Mode on v2)
+- **Lift-off distance (LOD)**: 1.0 / 2.0 mm on v1; 0.7–1.7 mm (0.1 mm steps) or 1.0 / 2.0 mm (Glass Mode) on v2
+- **Sensor features**: Motion Sync, Ripple Control, Angle Snapping, Disable LED on Lift-Off, Motion Jitter Filter (v1), Sensor Glass Mode / Force Max Sensor FPS / Sensor Angle Tuning (v2)
+- **Click & Switch settings**: Per-button Multiclick Filter and Kailh GX SPDT modes (*GX Speed Mode*, *GX Safe Mode*) for Left & Right buttons, Slamclick Filter
+- **Button Mapping**: Left-handed Mode and per-button remapping (Mouse clicks, Scroll, Keyboard shortcuts + modifiers, CPI Loop, Fixed CPI, Media keys, Disable)
+- **Power management & Maintenance**: Granular Standby and Deep sleep timers (1–120 min or disabled), Dongle Re-pairing, Factory Reset
+- Lossless read-modify-write configuration stored **on the mouse hardware**
 - Tray **Preferences** for icon colors, refresh interval, desktop low-battery notifications
 
 ## Supported Hardware

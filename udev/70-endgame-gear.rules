@@ -1,3 +1,3 @@
 # Endgame Gear High-Speed Wireless Dongle & Wired Mice (XM2w 4k, OP1w 4k, etc.)
 # Grants dynamic POSIX ACL read/write permissions strictly to the active seat user via systemd-logind
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3367", ATTRS{idProduct}=="1970|1968|1982|1969", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3367", ATTRS{idProduct}=="1970|1968|1982|1972|1984|1969", MODE="0660", TAG+="uaccess"
